@@ -77,13 +77,44 @@ PHP_METHOD(ASN1, __construct) {
 }
 /* }}} */
 
+/* {{{ proto static ASN1::get_error_string()
+ * Returns textual representation for error */
+PHP_METHOD(ASN1, get_error_string) {
+        long error_code;
+        const char *error_str;
 
-/* {{{ proto ASN1::check_version($required_version)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &error_code) == FAILURE) {
+		RETURN_FALSE
+	}
+
+        error_str = asn1_strerror(error_code);
+
+        if (error_str) {
+                RETURN_STRING(error_str, 1)
+        }
+
+        RETURN_NULL();
+}
+/* }}} */
+
+/* {{{ proto static ASN1::get_version()
+ * Returns current library version */
+PHP_METHOD(ASN1, get_version) {
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE
+	}
+
+        RETURN_STRING(asn1_check_version(NULL), 1)
+}
+/* }}} */
+
+
+/* {{{ proto static ASN1::check_version($required_version)
  * Check if the required version i */
 PHP_METHOD(ASN1, check_version) {
 	char *version = NULL;
 	int version_len = 0;
-	php_asn1_obj *intern;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &version, &version_len) == FAILURE) {
 		RETURN_FALSE
@@ -159,7 +190,9 @@ static zend_object_value asn1_object_clone(zval *this_ptr TSRMLS_DC) {
 
 static zend_function_entry asn1_funcs[] = {
   	PHP_ME(ASN1, __construct, NULL, ZEND_ACC_CTOR|ZEND_ACC_PUBLIC)
-	PHP_ME(ASN1, check_version, NULL, ZEND_ACC_PUBLIC)
+	PHP_ME(ASN1, check_version, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+        PHP_ME(ASN1, get_version, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+        PHP_ME(ASN1, get_error_string, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 
 	/* End of functions */
 	{NULL, NULL, NULL}
