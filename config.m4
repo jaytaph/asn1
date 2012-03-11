@@ -8,7 +8,7 @@ if test "$PHP_ASN1" != "no"; then
   if test -r $PHP_ASN1/$SEARCH_FOR; then # path given as parameter
     ASN1_DIR=$PHP_ASN1
   else
-    AC_MSG_CHECKING([for libtans1 files in default path])
+    AC_MSG_CHECKING([for libtasn1 files in default path])
     for i in $SEARCH_PATH ; do
       if test -r $i/$SEARCH_FOR; then
         ASN1_DIR=$i
@@ -24,8 +24,8 @@ if test "$PHP_ASN1" != "no"; then
 
   PHP_ADD_INCLUDE($ASN1_DIR/include)
 
-  LIBNAME=tans1
-  LIBSYMBOL=asn1_parser_to_tree
+  LIBNAME=tasn1
+  LIBSYMBOL=asn1_parser2tree
 
   PHP_CHECK_LIBRARY($LIBNAME,$LIBSYMBOL,
   [
@@ -39,5 +39,5 @@ if test "$PHP_ASN1" != "no"; then
 
   PHP_SUBST(ASN1_SHARED_LIBADD)
 
-  PHP_NEW_EXTENSION(ans1, ans1.c , $ext_shared)
+  PHP_NEW_EXTENSION(asn1, asn1.c , $ext_shared)
 fi
