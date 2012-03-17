@@ -35,6 +35,8 @@
 
 typedef struct _php_asn1_obj {
 	zend_object zo;
+        ASN1_TYPE definitions;
+        ASN1_TYPE structure;
 
 } php_asn1_obj;
 
@@ -58,16 +60,18 @@ PHP_METHOD(ASN1, __construct) {
 	php_set_error_handling(EH_THROW, php_asn1_exception_class_entry TSRMLS_CC);
 #endif
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+        if (zend_parse_parameters_none() == FAILURE) {
 #if ZEND_MODULE_API_NO > 20060613
-	zend_restore_error_handling(&error_handling TSRMLS_CC);
+                zend_restore_error_handling(&error_handling TSRMLS_CC);
 #else
-	php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+                php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
 #endif
 		return;
 	}
 
 	intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        intern->definitions = ASN1_TYPE_EMPTY;
+        intern->structure = ASN1_TYPE_EMPTY;
 
 #if ZEND_MODULE_API_NO > 20060613
 	zend_restore_error_handling(&error_handling TSRMLS_CC);
@@ -101,14 +105,13 @@ PHP_METHOD(ASN1, get_error_string) {
  * Returns current library version */
 PHP_METHOD(ASN1, get_version) {
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
-		RETURN_FALSE
-	}
+        if (zend_parse_parameters_none() == FAILURE) {
+                RETURN_FALSE
+        }
 
         RETURN_STRING(asn1_check_version(NULL), 1)
 }
 /* }}} */
-
 
 /* {{{ proto static ASN1::check_version($required_version)
  * Check if the required version i */
@@ -129,11 +132,197 @@ PHP_METHOD(ASN1, check_version) {
 /* }}} */
 
 
+/* {{{ proto ASN1::asn1_parser2tree
+ *  Return status code */
+PHP_METHOD(ASN1, parser2tree) {
+	php_asn1_obj *intern;
+        char *filename = NULL;
+	int filename_len = 0;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &filename, &filename_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+	intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+
+        int result = asn1_parser2tree(filename, &intern->definitions, NULL);
+        RETURN_LONG(result)
+}
+/* }}} */
+
+
+PHP_METHOD(ASN1, dump_structure) {
+        php_asn1_obj *intern;
+        char *filename = NULL;
+        int filename_len = 0;
+        char *tag = NULL;
+        int tag_len = 0;
+        int what = ASN1_PRINT_ALL;
+        int structure = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss|ll", &filename, &filename_len, &tag, &tag_len, &what, &structure) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        if (what <= 0 || what >= ASN1_PRINT_ALL) {
+                what = ASN1_PRINT_ALL;
+        }
+
+        FILE *f = fopen(filename, "w");
+        if (!f) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        asn1_print_structure(f, structure ? intern->definitions : intern->structure, tag, what);
+        fclose(f);
+
+        RETURN_TRUE
+}
+
+PHP_METHOD(ASN1, create_element) {
+        php_asn1_obj *intern;
+        char *name = NULL;
+        int name_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &name, &name_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        //int result = asn1_create_element (intern->definitions, name, &intern->structure);
+
+        int result = 0;
+        RETURN_LONG(result)
+}
+
+
+PHP_METHOD(ASN1, delete_element) {
+        php_asn1_obj *intern;
+        char *name = NULL;
+        int name_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &name, &name_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_delete_element (intern->structure, name);
+
+        RETURN_LONG(result)
+}
+
+PHP_METHOD(ASN1, count_elements) {
+        php_asn1_obj *intern;
+        int count = 0;
+
+        if (zend_parse_parameters_none() == FAILURE) {
+          RETURN_FALSE
+        }
+
+        printf("count");
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_number_of_elements(intern->structure, "", &count);
+
+        printf("C'%d': %d", count, result);
+
+        if (result != ASN1_SUCCESS) {
+                RETURN_FALSE
+        }
+
+        RETURN_LONG(count)
+}
+
+PHP_METHOD(ASN1, write_element) {
+        php_asn1_obj *intern;
+        char *name = NULL;
+        int name_len = 0;
+        char *value = NULL;
+        int value_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss", &name, &name_len, &value, &value_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        printf("writing: %s with %s\n", name, value);
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_write_value (intern->structure, name, value, value_len);
+
+        RETURN_LONG(result)
+}
+
+PHP_METHOD(ASN1, find_from_oid) {
+        php_asn1_obj *intern;
+        char *oid = NULL;
+        int oid_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &oid, &oid_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        printf("find_from_oid: %s \n", oid);
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        const char *result = asn1_find_structure_from_oid(intern->structure, oid);
+
+        if (! result) {
+                RETURN_NULL()
+        }
+
+        RETURN_STRING(result, 1)
+}
+
+PHP_METHOD(ASN1, read_tag) {
+        php_asn1_obj *intern;
+        char *tag = NULL;
+        int tag_len = 0;
+        int value, class = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &tag, &tag_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_read_tag(intern->structure, tag, &value, &class);
+        if (result != ASN1_SUCCESS) {
+                RETURN_FALSE
+        }
+
+        object_init(return_value);
+        zend_update_property_long(NULL, return_value, "value", strlen("value"), value TSRMLS_CC);
+        zend_update_property_long(NULL, return_value, "class", strlen("class"), class TSRMLS_CC);
+}
+
+PHP_METHOD(ASN1, read_value) {
+        php_asn1_obj *intern;
+        char *tag = NULL;
+        int tag_len = 0;
+        char *value = NULL;
+        int value_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &tag, &tag_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_read_value(intern->structure, tag, &value, &value_len);
+        if (result != ASN1_SUCCESS) {
+                RETURN_FALSE
+        }
+
+        RETURN_STRINGL(value, value_len, 1);
+}
+
+
 /* {{{ */
 static void asn1_object_free(void *object TSRMLS_DC) {
 	php_asn1_obj *intern = (php_asn1_obj *)object;
 
-        // @TODO: Free any internal data
+        // Free any internal data
+        asn1_delete_structure(&intern->definitions);
+        asn1_delete_structure(&intern->structure);
 
 	zend_object_std_dtor(&intern->zo TSRMLS_CC);
 	efree(object);
@@ -177,10 +366,7 @@ static zend_object_value asn1_object_clone(zval *this_ptr TSRMLS_DC) {
 	zend_objects_clone_members(&new_obj->zo, retval, &old_obj->zo, Z_OBJ_HANDLE_P(this_ptr) TSRMLS_CC);
 
         // @TODO: Copy over data
-/*
-	php_asn1_data_init(&new_obj->image);
-	php_asn1_data_clone(&old_obj->image, &new_obj->image);
-*/
+	//php_asn1_data_clone(&old_obj->definitions, &new_obj->definitions);
 
 	return retval;
 }
@@ -189,10 +375,19 @@ static zend_object_value asn1_object_clone(zval *this_ptr TSRMLS_DC) {
 
 
 static zend_function_entry asn1_funcs[] = {
-  	PHP_ME(ASN1, __construct, NULL, ZEND_ACC_CTOR|ZEND_ACC_PUBLIC)
-	PHP_ME(ASN1, check_version, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
-        PHP_ME(ASN1, get_version, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
-        PHP_ME(ASN1, get_error_string, NULL, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+  	PHP_ME(ASN1, __construct,      NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
+	PHP_ME(ASN1, check_version,    NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+        PHP_ME(ASN1, get_version,      NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+        PHP_ME(ASN1, get_error_string, NULL, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
+        PHP_ME(ASN1, parser2tree,      NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, dump_structure,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, create_element,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, write_element,    NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, delete_element,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, count_elements,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, find_from_oid,    NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, read_tag,         NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, read_value,       NULL, ZEND_ACC_PUBLIC)
 
 	/* End of functions */
 	{NULL, NULL, NULL}
@@ -205,6 +400,28 @@ PHP_MINIT_FUNCTION(asn1)
 
         /* Set up the object handlers */
 	memcpy(&asn1_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+
+        /*
+         * ASN1 constants (returned from read_tag)
+         */
+        REGISTER_LONG_CONSTANT("CLASS_UNIVERSAL",        ASN1_CLASS_UNIVERSAL,        CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("CLASS_APPLICATION",      ASN1_CLASS_APPLICATION,      CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("CLASS_CONTEXT_SPECIFIC", ASN1_CLASS_CONTEXT_SPECIFIC, CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("CLASS_PRIVATE",          ASN1_CLASS_PRIVATE,          CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("CLASS_STRUCTURED",       ASN1_CLASS_STRUCTURED,       CONST_CS | CONST_PERSISTENT);
+
+        REGISTER_LONG_CONSTANT("TAG_BOOLEAN",          ASN1_TAG_BOOLEAN,         CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_INTEGER",          ASN1_TAG_INTEGER,         CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_SEQUENCE",         ASN1_TAG_SEQUENCE,        CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_SET",   	       ASN1_TAG_SET,             CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_OCTET_STRING",     ASN1_TAG_OCTET_STRING,    CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_BIT_STRING",       ASN1_TAG_BIT_STRING,      CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_UTCTime",          ASN1_TAG_UTCTime,         CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_GENERALIZEDTime",  ASN1_TAG_GENERALIZEDTime, CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_OBJECT_ID",        ASN1_TAG_OBJECT_ID,       CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_ENUMERATED",       ASN1_TAG_ENUMERATED,      CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_NULL",   	       ASN1_TAG_NULL,            CONST_CS | CONST_PERSISTENT);
+        REGISTER_LONG_CONSTANT("TAG_GENERALSTRING",    ASN1_TAG_GENERALSTRING,   CONST_CS | CONST_PERSISTENT);
 
 	/*
 	 * ASN1 class
