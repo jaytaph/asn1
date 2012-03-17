@@ -37,7 +37,6 @@ typedef struct _php_asn1_obj {
 	zend_object zo;
         ASN1_TYPE definitions;
         ASN1_TYPE structure;
-
 } php_asn1_obj;
 
 /* The class entry pointers */
@@ -189,10 +188,11 @@ PHP_METHOD(ASN1, create_element) {
                 RETURN_FALSE
         }
 
-        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
-        //int result = asn1_create_element (intern->definitions, name, &intern->structure);
+        printf("Creating: %s \n", name);
 
-        int result = 0;
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_create_element (intern->definitions, name, &intern->structure);
+
         RETURN_LONG(result)
 }
 
@@ -220,12 +220,8 @@ PHP_METHOD(ASN1, count_elements) {
           RETURN_FALSE
         }
 
-        printf("count");
-
         intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
         int result = asn1_number_of_elements(intern->structure, "", &count);
-
-        printf("C'%d': %d", count, result);
 
         if (result != ASN1_SUCCESS) {
                 RETURN_FALSE
@@ -245,7 +241,10 @@ PHP_METHOD(ASN1, write_element) {
                 RETURN_FALSE
         }
 
-        printf("writing: %s with %s\n", name, value);
+        // @TODO: we could check the tag. If the tag is a ASN1_TAG_BOOLEAN, we could check if our value is boolean too,
+        // if not, we return FALSE (and a notice?)
+
+        printf("Writing: %s with %s\n", name, value);
 
         intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
         int result = asn1_write_value (intern->structure, name, value, value_len);
@@ -262,7 +261,7 @@ PHP_METHOD(ASN1, find_from_oid) {
                 RETURN_FALSE
         }
 
-        printf("find_from_oid: %s \n", oid);
+        printf("Find_from_oid: %s \n", oid);
 
         intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
         const char *result = asn1_find_structure_from_oid(intern->structure, oid);
@@ -299,8 +298,9 @@ PHP_METHOD(ASN1, read_value) {
         php_asn1_obj *intern;
         char *tag = NULL;
         int tag_len = 0;
-        char *value = NULL;
-        int value_len = 0;
+
+        char value[1024];
+        int value_len = 1024-1;
 
         if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &tag, &tag_len) == FAILURE) {
                 RETURN_FALSE
@@ -312,7 +312,30 @@ PHP_METHOD(ASN1, read_value) {
                 RETURN_FALSE
         }
 
-        RETURN_STRINGL(value, value_len, 1);
+
+        int v, c = 0;
+        result = asn1_read_tag(intern->structure, tag, &v, &c);
+        switch (v) {
+                case  ASN1_TAG_BOOLEAN :
+                        if (value) {
+                                RETURN_TRUE
+                        } else {
+                                RETURN_FALSE
+                        }
+                        break;
+                case ASN1_TAG_INTEGER :
+                        RETURN_STRINGL(value, value_len, 1);
+                        break;
+                case ASN1_TAG_NULL :
+                        RETURN_NULL();
+                        break;
+                default :
+                        RETURN_STRINGL(value, value_len-1, 1);
+                        break;
+        }
+
+        // Failsafe return
+        RETURN_FALSE
 }
 
 
