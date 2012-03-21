@@ -33,6 +33,16 @@
 #include "php_asn1.h"
 #include "libtasn1.h"
 
+// memory allocation macro for DER storage
+#define DER_ALLOC(der, der_len, str_len) {         \
+                der = (char *)emalloc(str_len);    \
+                der_len = str_len-1;               \
+                if (! der) {                       \
+                        RETURN_FALSE               \
+                }                                  \
+        }
+
+
 typedef struct _php_asn1_obj {
 	zend_object zo;
         ASN1_TYPE definitions;
@@ -45,6 +55,10 @@ zend_class_entry *php_asn1_sc_entry;
 
 /* The object handlers */
 static zend_object_handlers asn1_object_handlers;
+
+
+// Maximum length for a DER length
+#define MAX_DER_LEN  256
 
 
 /* {{{ proto ASN1::__construct()
@@ -338,6 +352,206 @@ PHP_METHOD(ASN1, read_value) {
         RETURN_FALSE
 }
 
+PHP_METHOD(ASN1, decode) {
+        php_asn1_obj *intern;
+        char *der = NULL;
+        int der_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &der, &der_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int result = asn1_der_decoding(&intern->structure, der, der_len, NULL);
+
+        if (result != ASN1_SUCCESS) {
+                RETURN_FALSE
+        }
+
+        RETURN_TRUE
+}
+
+PHP_METHOD(ASN1, der_encode_length) {
+        php_asn1_obj *intern;
+        int length = 0;
+        unsigned char *der = NULL;
+        int der_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &length) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        DER_ALLOC(der, der_len, MAX_DER_LEN)
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        asn1_length_der(length, der, &der_len);
+
+        RETURN_STRINGL(der, der_len, 0);
+}
+
+PHP_METHOD(ASN1, der_encode_octet) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        int str_len = 0;
+        char *der = NULL;
+        int der_len = 0;
+
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &str, &str_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        DER_ALLOC(der, der_len, str_len + MAX_DER_LEN)
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        asn1_octet_der(str, str_len, der, &der_len);
+
+        RETURN_STRINGL(der, der_len, 0);
+}
+
+PHP_METHOD(ASN1, der_encode_bit) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        int str_len = 0;
+        int bit_len = 0;
+        char *der = NULL;
+        int der_len = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "sl", &str, &str_len, &bit_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        // Can't have more useful bits than the length of the actual string
+        if (str_len - 1 < (bit_len >> 3)) {
+                php_error_docref(NULL TSRMLS_CC, E_WARNING, "Number of bits is higher than the length of the string");
+                RETURN_FALSE
+        }
+
+        DER_ALLOC(der, der_len, str_len + MAX_DER_LEN)
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        asn1_bit_der(str, bit_len + 1, der, &der_len);
+
+        RETURN_STRINGL(der, der_len, 0);
+}
+
+PHP_METHOD(ASN1, der_decode_length) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        char *der = NULL;
+        int der_len = 0;
+        int new_pos = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &der, &der_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int length = asn1_get_length_der(der, der_len, &new_pos);
+        if (length < 0) {
+                RETURN_FALSE
+        }
+
+        RETURN_LONG(length);
+}
+
+PHP_METHOD(ASN1, ber_decode_length) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        char *ber = NULL;
+        int ber_len = 0;
+        int new_pos = 0;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &ber, &ber_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int length = asn1_get_length_ber(ber, ber_len, &new_pos);
+        if (length < 0) {
+                RETURN_FALSE
+        }
+
+        RETURN_LONG(length);
+}
+
+PHP_METHOD(ASN1, der_decode_tag) {
+        php_asn1_obj *intern;
+        char *der = NULL;
+        int der_len = 0;
+        unsigned char *class;
+        int len;
+        unsigned long tag;
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &der, &der_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        // Retrieve the length of the string we are decoding
+        asn1_get_tag_der (der, der_len, class, &len, &tag);
+
+        object_init(return_value);
+        zend_update_property_long(NULL, return_value, "tag", strlen("tag"), tag TSRMLS_CC);
+        zend_update_property_stringl(NULL, return_value, "class", strlen("class"), class, len TSRMLS_CC);
+        zend_update_property_long(NULL, return_value, "length", strlen("length"), len TSRMLS_CC);
+}
+
+PHP_METHOD(ASN1, der_decode_octet) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        int str_len = 0;
+        int len = 0;
+        char *der = NULL;
+        int der_len = 0;
+
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &der, &der_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        // Retrieve the length of the string we are decoding
+        int ret_len = asn1_get_length_der (der, der_len, &str_len);
+
+        DER_ALLOC(str, str_len, str_len + MAX_DER_LEN)
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int ret = asn1_get_octet_der(der, der_len, &ret_len, str, str_len, &len);
+        if (ret != ASN1_SUCCESS) {
+                free(der);
+                RETURN_FALSE
+        }
+
+        DER_FREE_AND_RETURN(str, str_len);
+}
+
+PHP_METHOD(ASN1, der_decode_bit) {
+        php_asn1_obj *intern;
+        char *str = NULL;
+        int str_len = 0;
+        int len = 0;
+        char *der = NULL;
+        int der_len = 0;
+
+
+        if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &der, &der_len) == FAILURE) {
+                RETURN_FALSE
+        }
+
+        // Retrieve the length of the string we are decoding
+        int ret_len = asn1_get_length_der (der, der_len, &str_len);
+
+        // Allocate memory
+        DER_ALLOC(str, str_len, str_len + MAX_DER_LEN)
+
+        intern = (php_asn1_obj *)zend_object_store_get_object(getThis() TSRMLS_CC);
+        int ret = asn1_get_bit_der(der, der_len, &ret_len, str, str_len, &len);
+        if (ret != ASN1_SUCCESS) {
+                free(der);
+                RETURN_FALSE
+        }
+
+        DER_FREE_AND_RETURN(str, str_len);
+}
 
 /* {{{ */
 static void asn1_object_free(void *object TSRMLS_DC) {
@@ -411,6 +625,19 @@ static zend_function_entry asn1_funcs[] = {
         PHP_ME(ASN1, find_from_oid,    NULL, ZEND_ACC_PUBLIC)
         PHP_ME(ASN1, read_tag,         NULL, ZEND_ACC_PUBLIC)
         PHP_ME(ASN1, read_value,       NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, decode,           NULL, ZEND_ACC_PUBLIC)
+        //PHP_ME(ASN1, encode,           NULL, ZEND_ACC_PUBLIC)
+
+        PHP_ME(ASN1, der_encode_length,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_encode_octet,    NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_encode_bit,      NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, ber_decode_length,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_decode_length,   NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_decode_tag,      NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_decode_octet,    NULL, ZEND_ACC_PUBLIC)
+        PHP_ME(ASN1, der_decode_bit,      NULL, ZEND_ACC_PUBLIC)
+        //PHP_ME(ASN1, der_decode_element,       NULL, ZEND_ACC_PUBLIC)
+        //PHP_ME(ASN1, der_decode_startend,       NULL, ZEND_ACC_PUBLIC)
 
 	/* End of functions */
 	{NULL, NULL, NULL}
